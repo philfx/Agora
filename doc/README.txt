@@ -1,4 +1,4 @@
-# GIT address
+# GIST address
 https://gist.github.com/philfx/ea476f0d31784849c500
 
 # GitHub : origin (local), master (github)

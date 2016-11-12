@@ -25,7 +25,7 @@
 interface iVector {
     public function count($pos);       // count "on" ? (after $p, they are on)
     public function read($pos);        // read value of position
-    public function sql_get_on_list($pos);     // get a list of all "on" (unread) postion, in sql usable format
+    public function sql_get_on_list($pos, $table_row);     // get a list of all "on" (unread) postion, in sql usable format
     public function on($pos);          // mark pos as "on" (here : "new", or "unread")
     public function off($pos);         // mark pos as "off" (here : "read")
     public function off_list($list);   // off(23,54,88)
