@@ -1,0 +1,4 @@
+logs/*
+vendor/*
+composer.*
+app/settings.php

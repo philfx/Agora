@@ -1,0 +1,19 @@
+# tail -f /var/log/apache2/error.log
+# tail -f /var/www/html/agora/log/log.txt
+# sudo /root/ubuntu_set_date.sh
+
+UPDATE agora3.user, agora2.user 
+SET agora3.user.login=agora2.user.login, agora3.user.name=agora2.user.name 
+WHERE agora2.user.id=agora3.user.id
+
+# (a) admin :  /token:adminxxxxx
+# (s) miles :  /token:superuserx
+# (u) dosh  :  /token:userxxxxxx
+curl -d '{"login":"miles","passwd":"aaa","timeout":"31536000"}' -X POST http://localhost/agora/norest/session/
+curl -d '{"login":"admin","passwd":"aaa","timeout":"31536000"}' -X POST http://localhost/agora/norest/session/
+curl -d '{"login":"dosh","passwd":"aaa","timeout":"31536000"}' -X POST http://localhost/agora/norest/session/
+
+
+
+
+

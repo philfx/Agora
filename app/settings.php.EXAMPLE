@@ -1,0 +1,39 @@
+<?php
+
+return [
+    'settings' => [
+        // Slim Settings
+        'determineRouteBeforeAppMiddleware' => false,
+        'displayErrorDetails' => true,
+        
+        // database settings
+        'database' => [
+            'dsn' => 'mysql:host=localhost;dbname=agora3;charset=utf8',
+            'username' => 'agora',
+            'password' => 'PASSWORD_CHANGE_ME',
+        ],
+        
+        // monolog settings
+        // levels : DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL, ALERT, EMERGENCY
+        'logger' => [
+            'name' => 'agora',
+            'path' => __DIR__.'/../logs/logs.txt',
+            'level' => 'DEBUG'
+        ],
+
+        // agora settings
+        'agora' => [
+            'magic'          => '_PASSWORD_CHANGE_ME', // used to hash stuff for token create/verify
+            'defaut_timeout' => 1200,    // 20 mn * 60 seconds inactivity time out
+            'max_timeout'    => 2592000, // one month in seconds = 60×60×24×30
+            'token_size'     => 6,      // defaut and max is 40 (min 16, in PROD...)
+            // NO EFFECT 'vector_size'     => 4096,      // you must convert vector. Changing this parameter do nothing ;)
+
+            // version and copyright and title
+            'version'   => '2016-03-27',
+            'copyright' => '(c)2014, Philippe Froidevaux at gmail dot com, Switzerland',
+            'license'   => 'GNU GPL v2',
+            'title'     => 'Agora REST API + transition from 1998 version',
+        ],
+    ],
+];
