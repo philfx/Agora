@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS `node` (
   `ipaddress` char(15) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_sid_nid` (`sid`,`nid`),
+  UNIQUE KEY `idx_nid_sid` (`nid`,`sid`),
+  KEY `idx_tid` (`tid`),
   KEY `idx_srch_thread` (`sid`, `tid`),
   FULLTEXT idx_fulltext (`realname`, `title`, `body`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE = utf8mb4_unicode_ci AUTO_INCREMENT=1 ;

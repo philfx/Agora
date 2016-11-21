@@ -61,26 +61,6 @@ class Thread {
         return $threads_table;
     }
     
-    private static function db_get_threads_list($sid, $list) {
-        $query = "
-            -- Thread::_GET_page : get thread in range
-            SELECT `tid`, `nid`, `pid`, `uid`, `state`, `title`, `realname`, `cdate`
-            FROM `node` 
-            WHERE sid=:sid AND tid BETWEEN :start_tid AND :end_tid 
-            ORDER BY `tid`, `pid` ;
-        ";
-        $values = [ ':sid' => $sid, ':start_tid' => $start_tid, ':end_tid' => $end_tid ];
-        $res = self::$dbh->fetch_all($query, $values);
-   
-        $threads_table = [];
-        foreach ($res as $node) {
-            $threads_table[$node['tid']][$node['nid']] = $node;
-        }
-        // self::$logger->info("Tread::db_get_threads_range : ".print_r($threads_table, true));
-        
-        return $threads_table;
-    }
-    
     // remove leafs marked as removed, recursivly
     private static function flatten_and_skip_removed_nodes(&$tree,&$flatten_order) {
         // if all nodes in a branch are removed, uset it
@@ -241,35 +221,24 @@ class Thread {
         $page              = [];
         $tree              = [];
 
-        $start_tid = 0;
-        $end_tid = $section{'nthread'};
-            
         $v = NodeVector::db_get(self::$dbh, $context['uid'], $args['sid']);
         
-        if ($args['where'] === 'before') { // show things before a position
-            if (isset($args['tid']) && $args['tid'] !== $section{'nthread'}) {
-                $end_tid       = $args['tid'];
-                $page_end_tid  = $args['tid'];
-                $page_next_tid = $args['tid'] + 1; // else $page_end_tid = null, no change
-            } else {
-                $page_end_tid  = intval($section{'nthread'});
-                $page_next_tid = null;
-            }
-        } else { // $args['what'] === 'after'
-
-            if (isset($args['tid']) && $args['tid'] !== 0) {
-                $start_tid          = $args['tid'];
-                $page_start_tid     = $args['tid'];
-                $page_previous_tid  = $args['tid'] - 1;
-            } else {
-                $page_start_tid     = 0;
-                $page_previous_tid  = null;
-            }     
-        }
-            
         if ($args['what'] === 'showall') { // show full page, read or unread status does not matter
             // Define $start_thread and $end_thread for sql query
+            $start_tid = 0;
+            $end_tid = $section{'nthread'};
+            
             if ($args['where'] === 'before') { // show things before a position
+                
+                if (isset($args['tid']) && $args['tid'] !== $section{'nthread'}) {
+                    $end_tid       = $args['tid'];
+                    $page_end_tid  = $args['tid'];
+                    $page_next_tid = $args['tid'] + 1; // else $page_end_tid = null, no change
+                } else {
+                    $page_end_tid  = intval($section{'nthread'});
+                    $page_next_tid = null;
+                }
+
                 $start_tid = $end_tid - 
                         intval( $args['pagesize'] / $median_thread_weight < $min_nbthreads_got 
                                 ? $min_nbthreads_got 
@@ -277,7 +246,17 @@ class Thread {
                 if ($start_tid < 0) {
                     $start_tid = 0;
                 }
-            } else { // $args['what'] === 'after'  
+            } else { // $args['what'] === 'after'
+        
+                if (isset($args['tid']) && $args['tid'] !== 0) {
+                    $start_tid          = $args['tid'];
+                    $page_start_tid     = $args['tid'];
+                    $page_previous_tid  = $args['tid'] - 1;
+                } else {
+                    $page_start_tid     = 0;
+                    $page_previous_tid  = null;
+                }     
+                
                 $end_tid = $start_tid + 
                         intval( $args['pagesize'] / $median_thread_weight < $min_nbthreads_got 
                                 ? $min_nbthreads_got 
@@ -292,50 +271,62 @@ class Thread {
 //                    ."page_end_tid $page_end_tid\npage_next_tid $page_next_tid\n"
 //                    ."page_start_tid $page_start_tid\npage_previous_tid $page_previous_tid\n"
 //                    ."section{'nthread'} ".$section{'nthread'}."\n", true));
-            
             $table_page = self::db_get_threads_range($args['sid'], $start_tid, $end_tid);
             //self::$logger->info("Tread::_GET_page : ".print_r($table_page, true));
+            
+            $parents_list = array_keys($table_page);
+            if ($args['where'] === 'before') {
+               $parents_list = array_reverse($parents_list); // if "before tid", need to construct response in reverse order (last first)
+            }
+
+            self::$logger->info("Tread::_GET_page : parents_list : ".print_r($parents_list, true));
+
+            foreach($parents_list as $tid) { // break if page size limit is reached
+                self::$logger->info("Tread::_GET_page : foreach(parents_list as tid) : ".print_r($tid, true));
+                
+                $thread = self::make_tree($table_page[$tid], $v);
+                $thread_value = reset($thread);
+                //self::$logger->info("Tread::_GET_page : thread : ".print_r($thread_value, true));
+                
+                if (($page_nb_node + 1 + 1 + $thread_value['thread_replies']) >= $args['pagesize'] && $page_nb_node > 0) {
+                    // page is full and return result is not empty. No need for more. Stop.
+                    break;
+                }
+                $page_nb_node    += 1 + $thread_value['thread_replies'];
+                $page_nb_threads += 1;
+                
+                if ($args['where'] === 'before') {
+                    array_unshift($tree, $thread);
+                    $page_start_tid    = $tid;
+                    $page_previous_tid = $tid -1;
+                    if ($page_previous_tid <= 0) {
+                        $page_previous_tid = null;
+                    }
+                } else { // $args['what'] === 'after'
+                    array_push($tree, $thread);
+                    $page_end_tid  = $tid;
+                    $page_next_tid = $tid + 1;
+                    if ($page_next_tid >= $section{'nthread'}) {
+                        $page_next_tid = null;
+                    }
+                }
+            }
+                
+//            self::$logger->info("Tread::_GET_page : positions : ".
+//                print_r("\nstart_tid $start_tid\nend_tid $end_tid\n"
+//                    ."page_end_tid $page_end_tid\npage_next_tid $page_next_tid\n"
+//                    ."page_start_tid $page_start_tid\npage_previous_tid $page_previous_tid\n"
+//                    ."section{'nthread'} ".$section{'nthread'}."\n", true));
+                        
+            // TODO TEST
+            // si un thread au mileu de tout ça est complètement effacé ?
+            // si tous les threads requis sont effacés ?
+            // si un message par thread, et taille pagesize non atteinte ?
+
         } 
         else { // $args['what'] === 'showunread'
             
-            // get node list (in sql compliant formt) that are unread 
-            // CRITICAL PATH; should not take as much as 0.02s on a poour VM. And 10 seconds with bad indexing
-            $unread_node_list = $v->sql_get_on_list($section['nnode'], 'node.nid');
-            self::$logger->info("Tread::_GET_page : unread_node_list : ".print_r($unread_node_list, true));
-
-            // just for profiling : get all vector (uid/sid), for all users and all section
-            /*    $allv= self::$dbh->fetch_all("SELECT user_status.`uid`,user_status.`sid`, section.nnode FROM `user_status` , section WHERE section.sid = user_status.sid ; ");
-                $vlist = "";
-                foreach ($allv as $suv) {
-                    $v = NodeVector::db_get(self::$dbh, $suv['uid'], $suv['sid']);
-                    $vlist .= "--- sid : ".$suv['sid']." --- ".$v->sql_get_on_list($suv['nnode'], 'thrnum').".\n";
-                }
-                self::$logger->info("Tread::_GET_page : ALL unread : \n$vlist\n");
-            */
-            
-            // select all threads that contain this messages
-            $unreads_tid_list = self::$dbh->fetch_all("
-                    -- Thread::_GET_page : get thread wich contain unread messages
-                    SELECT `tid` FROM `node` 
-                    WHERE $unread_node_list  
-                        AND sid=:sid 
-                    ORDER BY `tid`
-                ", [':sid' => $args['sid']] );
-            $unreads_tid = implode(', ', $unreads_tid_list);
-            self::$logger->info("Tread::_GET_page : $unreads_tid : \n".print_r($unreads_tid, true));
-            
-            return $response->withJson( [ 'error' => 'in progress...().' ] , 404);
-            
-            // get this threads, limite by page size ("tid IN (2,5,7,11, ...)")
-            $unreads_threads = self::$dbh->fetch_all("
-                    -- Thread::_GET_page : get thread in range
-                    SELECT `tid`, `nid`, `pid`, `uid`, `state`, `title`, `realname`, `cdate`
-                    FROM `node` 
-                    WHERE 
-                        tid IN ($unread_list_sql) 
-                        AND sid=:sid 
-                    ORDER BY `tid`, `pid` ;
-                ", [':sid' => $sid] );
+            $unread_list = $v->get_on_list($section['nnode']);
             
             
             
@@ -364,52 +355,7 @@ Si unread,
 
 
              */
-            
-            return $response->withJson( [ 'error' => 'in progress...().' ] , 404);
         }
-        
-        $parents_list = array_keys($table_page);
-        if ($args['where'] === 'before') {
-           $parents_list = array_reverse($parents_list); // if "before tid", need to construct response in reverse order (last first)
-        }
-
-        self::$logger->info("Tread::_GET_page : parents_list : ".print_r($parents_list, true));
-
-        foreach($parents_list as $tid) { // break if page size limit is reached
-            self::$logger->info("Tread::_GET_page : foreach(parents_list as tid) : ".print_r($tid, true));
-
-            $thread = self::make_tree($table_page[$tid], $v);
-            $thread_value = reset($thread);
-            //self::$logger->info("Tread::_GET_page : thread : ".print_r($thread_value, true));
-
-            if (($page_nb_node + 1 + 1 + $thread_value['thread_replies']) >= $args['pagesize'] && $page_nb_node > 0) {
-                // page is full and return result is not empty. No need for more. Stop.
-                break;
-            }
-            $page_nb_node    += 1 + $thread_value['thread_replies'];
-            $page_nb_threads += 1;
-
-            if ($args['where'] === 'before') {
-                array_unshift($tree, $thread);
-                $page_start_tid    = $tid;
-                $page_previous_tid = $tid -1;
-                if ($page_previous_tid <= 0) {
-                    $page_previous_tid = null;
-                }
-            } else { // $args['what'] === 'after'
-                array_push($tree, $thread);
-                $page_end_tid  = $tid;
-                $page_next_tid = $tid + 1;
-                if ($page_next_tid >= $section{'nthread'}) {
-                    $page_next_tid = null;
-                }
-            }
-        }
-        
-         // TODO TEST
-        // si un thread au mileu de tout ça est complètement effacé ?
-        // si tous les threads requis sont effacés ?
-        // si un message par thread, et taille pagesize non atteinte ?
         
         $v->db_set(); // save vector if has been changed (removed nodes are automagically marked as read)
         

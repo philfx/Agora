@@ -23,15 +23,14 @@
  */
 
 interface iVector {
-    public function count($pos);       // count "on" ? (after $p, they are on)
-    public function read($pos);        // read value of position
-    public function sql_get_on_list($pos, $table_row);     // get a list of all "on" (unread) postion, in sql usable format
-    public function on($pos);          // mark pos as "on" (here : "new", or "unread")
-    public function off($pos);         // mark pos as "off" (here : "read")
-    public function off_list($list);   // off(23,54,88)
-    public function off_all($pos);     // mark all as "off"
-    public function export();          // return string for future reincarnations
-    public function convert($vector);  // convert a $vector_size vector to another $vector_size
+    public function count($pos);        // count "on" ? (after $p, they are on)
+    public function read($pos);         // read value of position
+    public function on($pos);           // mark pos as "on" (here : "new", or "unread")
+    public function off($pos);          // mark pos as "off" (here : "read")
+    public function off_list($list);    // off(23,54,88)
+    public function off_all($pos);      // mark all as "off"
+    public function export();           // return string for future reincarnations
+    public function convert($vector);   // convert a $vector_size vector to another $vector_size
 }
 
 class NodeVector implements iVector {
@@ -41,9 +40,7 @@ class NodeVector implements iVector {
     // It's *wrong* to just change this without converting saved vectors first
     public static $mem_size   = 4096; // DEFAUT for all vector. If you change this, convert() the db first...
     public static $mem_buffer = 512;  // used when (moveRight(), move futher to avoid moving at each off()
-//    public static $mem_size   = 10; // DEFAUT for all vector. If you change this, convert() the db first...
-//    public static $mem_buffer = 5;  // used when (moveRight(), move futher to avoid moving at each off()
-
+    
     // Note using PHP GMP
     //      Do NOT use >>, << or ~. It works only for numbers < PHP_INT_MAX (i.e. 32 or 64 bits)
     //          So i choose to manipulate strings...
@@ -110,15 +107,15 @@ class NodeVector implements iVector {
         
     public function dump() { // for debugging/testing my lib
         $max = 50;
-        $output = '--- ';
+        $output = '----------- ';
         $count = 0;
         for ($i = 0; $i < $max; $i++) {
             $output .= ($i == $this->c) ? '*' : $count;
             $count++;
             $count = ($count == 10) ? 0 : $count;
         }
-        $output .=  " cursor {$this->c}. (size : {$this->s}) (mem_size:".self::$mem_size.", mem_buffer:".self::$mem_buffer.")\n";
-        $output .= '--- ';
+        $output .=  " cursor {$this->c}. (size : {$this->s})\n";
+        $output .= '----------- ';
         for ($i = 0; $i < $max; $i++) {
             $output .= $this->read($i) ? '1' : '0';
         }
@@ -254,82 +251,15 @@ class NodeVector implements iVector {
             return false;
         } elseif ($this->c <= $this->s) {
             // $cursor is still smaller than vector size
-            return gmp_testbit($this->v, ($this->s - $pos -1) );
+            return gmp_testbit($this->v, ($this->s - $pos -1) ); /// -1
         } elseif ($this->c > $this->s) { 
             // last case, every cases are covered
-            return gmp_testbit($this->v, ($this->c - $pos) -1 );
+            return gmp_testbit($this->v, ($this->c - $pos) -1);
         }
     }
     
-    public function sql_get_on_list($pos, $table_row) {
-        // parse vector and
-        // if "alone" on (or in pair), put it in a set : "IN (x, y, ...)"
-        // if "group" on, put it in a list : "BETWEEN x AND y OR BETWEEN ..."
-        
-        
-        $from = 0;
-        if ($this->c > $this->s) { 
-            $from = $this->c - $this->s;
-        }
-        
-//        echo "\n pos = $pos, from = $from !\n";
-        $list_alone = [];
-        $list_range = [];
-        $cursor = null;
-        $cursor_last = null;
-        for ($i = $from ; $i <= $pos; $i++) {
-            $b = $this->read($i);
-//            echo "$i: $b ... ";
-            if ($b == true && $i !== $pos) {
-                if (is_null($cursor)) {
-                    $cursor = $i;
-                    $cursor_last = $i;
-//                    echo "true, cursor null (c=$cursor, l=$cursor_last)\n";
-                } else {                    
-                    $cursor_last = $i;
-//                    echo "true, (c=$cursor, l=$cursor_last)\n";
-                }
-            } elseif (!is_null($cursor)) { // $b == false
-                if ( $cursor === $cursor_last ) { // previous is alone
-//                    echo "false, c=last, ALONE (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_alone, $cursor);
-                    $cursor = null;
-                } elseif ( $cursor === $cursor_last - 1 ) { // 2 previous only
-//                    echo "false, c=last-1, ALONE-pair cursor (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_alone, $cursor);
-                    array_push($list_alone, $cursor_last);
-                    $cursor = null;
-                } else { // more than 2 elements in "true" list
-//                    echo "false, range, RANGE (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_range, "$cursor AND $cursor_last");
-                    $cursor = null;
-                } // else, ignore and continue
-            } else { // $b == false and no cursor, just ignore
-//                echo "false, do nothing (c=$cursor, l=$cursor_last)\n"; 
-            }
-        }
-        
-        $sql_alone = "";
-        if (count($list_alone) > 0) {
-            $sql_alone = "$table_row IN (".implode(',',$list_alone).")";
-        }
-        $sql_range = "";
-        if (count($list_range) > 0) {
-            $sql_range = " ( $table_row BETWEEN ".implode(" OR $table_row BETWEEN ",$list_range)." )";
-        }
-        
-        $sql = "";
-        if ($sql_alone !== "" && $sql_range !== "") {
-            $sql = $sql_alone." OR ".$sql_range;
-        } else {
-            $sql = $sql_alone.$sql_range;
-        }
-        
-        return $sql;
-    }
-    
-    public function on($pos) {
-        // has not been really tested...
+    public function on($pos) { // TODO
+        // not implemented. Not usefull. Use flags instead.
         // >= c is in the future and then already on
         // < c-s is already in the past, then off forever
         if ($pos < $this->c && $pos >= ($this->c - $this->s) ) { 
@@ -338,7 +268,7 @@ class NodeVector implements iVector {
         }
         if ($pos < ($this->c - $this->s) ) {
             return false; // too late, out of offset, I cannot set it back to on
-        } else { // NOT tested. Out of offset in the future, so always 'on'
+        } else {
             return true;
         }
     }

@@ -134,7 +134,7 @@ class _Migrate {
 
             stage 3 : (shell) (~5 mn)
                 NOW do the export/export think :
-                db_migration_data.sh
+                4_db_migration_data.sh
         ");
                
         return $response->withJson(['result' => 'Done.' ], 200);

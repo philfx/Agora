@@ -143,7 +143,7 @@ class Node {
         
         $query = "
             SELECT
-                `id`, `sid`, `nid`, `pid`, `tid`, `title`, `body`, `cdate`, `state`, `uid`, `realname`, `email`, `ipaddress`
+                `id`, `sid`, `nid`, `pid`, `tid`, `title`, `body`, `sig`, `cdate`, `state`, `uid`, `realname`, `email`, `ipaddress`
             FROM `node` 
             WHERE `sid`=:sid AND `nid`=:nid AND `state` = 'p'
         ";
@@ -218,7 +218,6 @@ class Node {
         
         // Warning. You cannot unread a thread older than vector_size. 
         // It retain the read/unread status of only the last vector_size nodes of a given section
-        
         
         if (!self::auth_can_access_section($args, $context)) {
             return $response->withJson( [ 'error' => 'No Auth to this section. You are probably not subscribed to.' ] , 403);

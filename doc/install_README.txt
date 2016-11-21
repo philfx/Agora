@@ -45,6 +45,15 @@ UPDATE `user` SET `username` = 'dosh' WHERE `user`.`uid` = 4 ;
 # login dosh
 UPDATE `user_token` SET `token` = 'ef9286' WHERE `user_token`.`token` = 'b9ee01';
 
+# GitHub : origin (local), master (github)
+# https://github.com/philfx/Agora
+
+# Git - install AgoraRest from git
+cd /home/www/uniag.ch/aora
+git clone  https://github.com/philfx/Agora rest
+
+cd rest/ && mkdir logs && chown -R www-data.www-data logs
+
 
 # Postman
 # configure postman
