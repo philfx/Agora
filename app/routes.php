@@ -7,47 +7,6 @@
 // It can be passed as : HTTP_REQUEST, Cookie, args, or bodyJson
 // Read Middleware.php for more infos !
  
-/* get stats ? (add a route which return a CSV or Excel file with stat, to be used in an Pivot Table)
- * 
- * user post over the years : user, group by count nb_post_month (count post + deleted?)
- * user post by day/hour : user, group by count nb_post hour (count post + deleted?)
- * 
- * params : 
- *      everybody or by user
- *      overs the time or by hours/day of the week
- *      count deleted (show how much people delete)
- *      by section over the time
- * 
- * SELECT   CONCAT(HOUR(created), ':00-', HOUR(created)+1, ':00') AS Hours
- *   ,      COUNT(*) AS `usage`
- * FROM     history
- * WHERE    created BETWEEN '2012-02-07' AND NOW()
- * GROUP BY HOUR(created)
- * 
- * SELECT [activity_dt], count(*)
- * FROM table1
- * GROUP BY hour( activity_dt ) , day( activity_dt )
- * 
- * add a rest func with auth to admin only, and a php page wich return Excel --> http://phpexcel.codeplex.com/
- * then use Pivot Table inside Excel for graphs
- * (phpoffice on github, also)
- * 
- */
-
-// Thread (and pages) management
-
-$app->get('/thread/sid/{sid:[0-9]+}/tid/{tid:[0-9]+}/', '\Thread:_GET_one');
-$app->get('/thread/sid/{sid:[0-9]+}/{what:showall|showunread}/{pagesize:[0-9]+}/{where:after|before}/[tid/{tid:[0-9]+}/]', '\Thread:_GET_page'); //  ? 
-
-// {where:showafter|showbefore}/{pagesize:[0-9]+}/{what:all|unread)/[tid/{tid:[0-9]+}/]
-
-$app->put('/thread/sid/{sid:[0-9]+}/tid/{tid:[0-9]+}/time/{time:[0-9]+}/',
-        '\Thread:_PUT_one'); // mark read
-$app->put('/thread/sid/{sid:[0-9]+}/fromtid/{fromtid:[0-9]+}/totid/{totid:[0-9]+}/time/{time:[0-9]+}/',
-        '\Thread:_PUT_page'); // mark read
-
-$app->put('/thread/sid/{sid:[0-9]+}/lastnode/{lastnode:[0-9]+}/', '\Thread:_PUT_all'); // mark all as read before lastnode
-
 
 // Session management
 
@@ -62,7 +21,8 @@ $app->delete('/session/uid/{uid:[0-9]+}/',           '\Session:_DELETE_uid');   
 // - user and superuser can "get current group"
 // - superuser can "put group" (edit its own group).
 // - admin is the only one who can get_all, create, or delete group
-// - role "admin" allow to create/edit/delete groups, add a user in a group, but NOT do other operation on other groups (or only because API flaw)
+// - role "admin" allow to create/edit/delete groups, add a user in a group, 
+//   but can NOT do other operation on other groups
 // - role "admin" is also superuser of his own group
 
 $app->post('/group/', '\Group:_POST'); // {"groupname":"testgroup","groupdescr":"xxx"}
@@ -72,12 +32,14 @@ $app->put('/group/gid/{gid:[0-9]+}/', '\Group:_PUT');
 $app->delete('/group/gid/{gid:[0-9]+}/Wow-wow-wow-iamreallysuretodeleteawholegroupeandmillionsmessages/', '\Group:_DELETE'); // TODO /Iknowwhatimdoing
 
 // User management
-// ('gid' is use here because "admin" should be able to create the first user of a new group, and review/manage users of a given group)
+// 'gid' is used here because "admin" should be able to
+// - create the first user of a new group
+// - review/manage users of a given group (it's the only job of admin, in case of a superuser has a problem)
 
-$app->post('/user/gid/{gid:[0-9]+}/', '\User:_POST');  // { name, login, sign, passwd, role }
+$app->post('/user/gid/{gid:[0-9]+}/',    '\User:_POST');  // { name, login, sign, passwd, role }
 $app->get('/user/uid/{uid:[0-9]+}/',     '\User:_GET_one');
 $app->get('/user/gid/{gid:[0-9]+}/all/', '\User:_GET_all');
-$app->put('/user/uid/{uid:[0-9]+}/',    '\User:_PUT');     
+$app->put('/user/uid/{uid:[0-9]+}/',     '\User:_PUT');     
 $app->delete('/user/uid/{uid:[0-9]+}/Iknowwhatimdoing/', '\User:_DELETE');
 
 // Section management
@@ -104,6 +66,16 @@ $app->put('/node/sid/{sid:[0-9]+}/nid/{nid:[0-9]+}/mark/{what:read|unread}/', '\
 $app->put('/node/sid/{sid:[0-9]+}/nid/{nid:[0-9]+}/flag/{what:set|delete}/',  '\Node:_PUT_flags'); 
 $app->delete('/node/sid/{sid:[0-9]+}/nid/{nid:[0-9]+}/', '\Node:_DELETE');
 
+// Thread (and pages) management
+
+$app->get('/thread/sid/{sid:[0-9]+}/tid/{tid:[0-9]+}/', '\Thread:_GET_one');
+$app->get('/thread/sid/{sid:[0-9]+}/{what:showall|showunread}/{pagesize:[0-9]+}/{where:after|before}/[tid/{tid:[0-9]+}/]', '\Thread:_GET_page'); //  ? 
+$app->put('/thread/sid/{sid:[0-9]+}/tid/{tid:[0-9]+}/time/{time:[0-9]+}/',
+        '\Thread:_PUT_one'); // mark read
+$app->put('/thread/sid/{sid:[0-9]+}/fromtid/{fromtid:[0-9]+}/totid/{totid:[0-9]+}/time/{time:[0-9]+}/',
+        '\Thread:_PUT_page'); // mark read
+
+$app->put('/thread/sid/{sid:[0-9]+}/lastnode/{lastnode:[0-9]+}/', '\Thread:_PUT_all'); // mark all as read before lastnode
 
 
 // Search management - a separate func because of search engine capability,
@@ -111,11 +83,10 @@ $app->delete('/node/sid/{sid:[0-9]+}/nid/{nid:[0-9]+}/', '\Node:_DELETE');
 
 // params ? {sid_list} & date_from & date_to & {author/titel/body} & [pattern AND "pa te rn" AND NOT patern OR xxx]
 $app->get('/search/help/',  '\Search:_GET_help'); // just return a json with text inside
-$app->get('/search/node/',  '\Search:_GET_node');
-// $app->get('/search/flag/',  '\Search:_GET_flag'); NOT IMPLEMENTED because it could be done on client-side
+$app->get('/search/',  '\Search:_GET_node');
 
 
-// Migrate for agora1. TODO REMOVE THIS in prod ;) please. And remove UNBUFFER in Database.php
+// Migrate for agora1. TODO REMOVE THIS in prod
 $app->get('/_migrate/stage0', '\_Migrate:_GET_stage_0');
 $app->get('/_migrate/stage1', '\_Migrate:_GET_stage_1');
 $app->get('/_migrate/stage2', '\_Migrate:_GET_stage_2');
@@ -123,4 +94,4 @@ $app->get('/_migrate/stage3', '\_Migrate:_GET_stage_3');
 $app->get('/_migrate/stage4', '\_Migrate:_GET_stage_4');
 $app->get('/_migrate/stage5', '\_Migrate:_GET_stage_5');
 
-// END of Routes._migrate/stage0
+// END of Routes.

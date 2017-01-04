@@ -15,15 +15,6 @@ class Search {
      * b-trees (allowing for selecting, sorting or ranges starting from left 
      * most column) or hash tables (allowing for selection starting from left 
      * most column).
-     *  => mais FULLTEXT ne fonctionne pas avec ma version de MySQL (5.5 au lieu de 5.6)
-     * 
-     * InnoDB support FULLTEXT indexes à partir de la version 5.6 seulement
-     * Fonctions :
-     * http://dev.mysql.com/doc/refman/5.6/en/fulltext-search.html
-     * 
-     * aussi : http://sphinxsearch.com/about/sphinx/
-     * intégré avec Mysql et php => intéressant ?
-     * mais faut installer, configurer, connaître, tuner, maintenir, ...
      * 
      */
     
@@ -156,11 +147,15 @@ class Search {
         
         if (!ctype_digit(strval($params['limit_start'])) OR !ctype_digit(strval ($params['limit_end']))) {
             self::$logger->debug("Search->_GET --> limit_start/limit_end : '".$params['limit_start']."' , '".$params['limit_end']."'...");
-            return $response->withJson( [ 'error' => 'Parameter \'limit_start\' and \'limit_end\' must be interger. I saw you.' ] , 400);
+            return $response->withJson( [ 'error' => 'Parameter \'limit_start\' and \'limit_end\' must be integers only. I saw you.' ] , 400);
         }
         
         if (!isset($params['sid_list'])) {
             return $response->withJson( [ 'error' => 'Parameter \'sid_list\' required and not found.' ] , 400);
+        } else {
+            // Check if sid_list is only numbers and ',' - sql injection possible here
+            // Note : no alert, just remove unwanted chars
+            preg_replace("/[^0-9,]/", "", $params['sid_list']);
         }
         
         // Auth : check if user is subscribed to {sid_list}
@@ -171,7 +166,6 @@ class Search {
         }
         
         // Build sql search pattern
-        // Notes : 
 
         // lesson : https://www.mullie.eu/mysql-as-a-search-engine/
 
@@ -209,7 +203,7 @@ class Search {
         $qparams[':date_from']      = $params['date_from'];
         $qparams[':date_to']        = $params['date_to'];
 
-        self::$logger->debug("Search::_GET: \n -----> $params are : \n".print_r($qparams,true));
+        self::$logger->debug("Search::_GET: \n -----> params are : \n".print_r($qparams,true));
 
         // Compute result
 

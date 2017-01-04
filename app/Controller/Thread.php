@@ -223,12 +223,10 @@ class Thread {
             return $response->withJson( [ 'error' => 'No Auth to this section. You are probably not subscribed to.' ] , 403);
         }
         
-        // Get section infos (needed below : nthread, sectionname)
+        // Get section infos (needed below : nthread, nnode)
         $section = self::$dbh->fetch_one("
             -- Thread::_GET_page : get infos about one section
-            SELECT `nthread`, `nnode`
-            FROM `section`
-            WHERE sid=:sid ;
+            SELECT `nthread`, `nnode` FROM `section` WHERE sid=:sid ;
         ", [ ':sid' => $args['sid'] ]);
         
         // must be set later for output result (page info and pages navigation)
@@ -296,10 +294,11 @@ class Thread {
             $table_page = self::db_get_threads_range($args['sid'], $start_tid, $end_tid);
             //self::$logger->info("Tread::_GET_page : ".print_r($table_page, true));
         } 
-        else { // $args['what'] === 'showunread'
+        else { // $args['what'] === 'showunread' (show only threads with unread messages)
             
             // get node list (in sql compliant formt) that are unread 
-            // CRITICAL PATH; should not take as much as 0.02s on a poour VM. And 10 seconds with bad indexing
+            // CRITICAL PATH; the most time/CPU expensive part of this software
+            
             $unread_node_list = $v->sql_get_on_list($section['nnode'], 'node.nid');
             self::$logger->info("Tread::_GET_page : unread_node_list : ".print_r($unread_node_list, true));
 
@@ -312,19 +311,28 @@ class Thread {
                 }
                 self::$logger->info("Tread::_GET_page : ALL unread : \n$vlist\n");
             */
-            
+
+            // $unread_node_list is empty -> there is no new message -> RETURN
+            if ($unread_node_list == '') {
+                return $response->withJson( 
+                    [   'tree' => [],
+                        'page_time_read' => time(),
+                        'page_nb_threads' => 0,
+                        'page_nb_node' => 0
+                    ] , 200);
+            }
+
             // select all threads that contain this messages
-            $unreads_tid_list = self::$dbh->fetch_all("
+            $unreads_tid_list = self::$dbh->fetch_list("
                     -- Thread::_GET_page : get thread wich contain unread messages
                     SELECT `tid` FROM `node` 
                     WHERE $unread_node_list  
                         AND sid=:sid 
+                    GROUP BY `tid`
                     ORDER BY `tid`
                 ", [':sid' => $args['sid']] );
             $unreads_tid = implode(', ', $unreads_tid_list);
-            self::$logger->info("Tread::_GET_page : $unreads_tid : \n".print_r($unreads_tid, true));
-            
-            return $response->withJson( [ 'error' => 'in progress...().' ] , 404);
+//            self::$logger->info("Tread::_GET_page : $unreads_tid  \n");
             
             // get this threads, limite by page size ("tid IN (2,5,7,11, ...)")
             $unreads_threads = self::$dbh->fetch_all("
@@ -332,40 +340,17 @@ class Thread {
                     SELECT `tid`, `nid`, `pid`, `uid`, `state`, `title`, `realname`, `cdate`
                     FROM `node` 
                     WHERE 
-                        tid IN ($unread_list_sql) 
+                        tid IN ($unreads_tid) 
                         AND sid=:sid 
                     ORDER BY `tid`, `pid` ;
-                ", [':sid' => $sid] );
+                ", [':sid' => $args['sid']] );
+            $table_page = [];
+            foreach ($unreads_threads as $node) {
+                $table_page[$node['tid']][$node['nid']] = $node;
+            }
+//            self::$logger->info("Tread::_GET_page : \n".print_r($unreads_threads,true));
             
-            
-            
-            /*
-             * SELECT start,maxsize,bitlist  FROM status WHERE nuser=5 AND nsection=97
-             * SELECT thrnum FROM threads WHERE section=97 AND num > 12425 AND num < 15547 GROUP BY thrnum
-             * SELECT num,thrnum,parent,title,erased,author,name,cdate
-             *      FROM     threads
-             *      WHERE    section=97 AND thrnum IN (756,1209,...,1940,1941,1942,1943)
-             *      ORDER BY thrnum,parent,num
-             * 
-             * Le paramètre « from » ne doit pas être obligatoire : dans ce cas prendre le dernier thread (last)
-
-Function build_page($list)
-Make_thread until > count (still make one more until is not empty or end_of_list)
-Buildpage : previous, next, first, last, mark_page_read, mark_all_read
-
-Si all,
-Take the last x/2 threads (up or down) => $list
-Return build_page($list)
-Si unread,
-	Get thread within first_unread -> last_unread, and thread > or < start_from
-		Si fragmentation très forte (= ?), retourner uniquement les quelques messages non-lu
-	Foreach thread, get nodes; check for unread and remove read threads (=> statistic and log here) => $list
-	Return build_page($list)
-
-
-             */
-            
-            return $response->withJson( [ 'error' => 'in progress...().' ] , 404);
+//            return $response->withJson( [ 'error' => 'in progress...().' ] , 404);
         }
         
         $parents_list = array_keys($table_page);
@@ -376,7 +361,7 @@ Si unread,
         self::$logger->info("Tread::_GET_page : parents_list : ".print_r($parents_list, true));
 
         foreach($parents_list as $tid) { // break if page size limit is reached
-            self::$logger->info("Tread::_GET_page : foreach(parents_list as tid) : ".print_r($tid, true));
+//            self::$logger->info("Tread::_GET_page : foreach(parents_list as tid) : ".print_r($tid, true));
 
             $thread = self::make_tree($table_page[$tid], $v);
             $thread_value = reset($thread);
@@ -406,17 +391,17 @@ Si unread,
             }
         }
         
-         // TODO TEST
-        // si un thread au mileu de tout ça est complètement effacé ?
-        // si tous les threads requis sont effacés ?
-        // si un message par thread, et taille pagesize non atteinte ?
+        // TODO TEST si un thread au mileu de tout ça est complètement effacé ?
+        // TODO TEST si tous les threads requis sont effacés ?
+        // TODO TEST si un message par thread, et taille pagesize non atteinte ?
         
         $v->db_set(); // save vector if has been changed (removed nodes are automagically marked as read)
         
-        $page['tree']            = $tree;
-        $page['page_time_read']  = time();
-        $page['page_nb_threads'] = $page_nb_threads;
-        $page['page_nb_node']    = $page_nb_node;
+        $page['tree']             = $tree;
+        $page['page_time_read']   = time();
+        $page['page_nb_threads']  = $page_nb_threads;
+        $page['page_nb_node']     = $page_nb_node;
+        $page['section_nb_nodes'] = $section['nnode'];
         if (!is_null($page_previous_tid)) {
             $page['page_previous_tid'] = $page_previous_tid;
         }
@@ -430,35 +415,75 @@ Si unread,
             $page['page_end_tid'] = $page_end_tid;
         }     
         
+        // if error in returning empty page : check the return above
         return $response->withJson( $page , 200);
     } // END public static function _GET_page
+    
     
     public static function _PUT_one (Request $request, Response $response, $args) { // mark as "read" before $param[time]
         // Route : '/thread/sid/{sid:[0-9]+}/tid/{tid:[0-9]+}/time/{time:[0-9]+}/'
         $context = $request->getAttribute('context');
         
+        if (!self::auth_can_access_section($args, $context)) {
+            return $response->withJson( [ 'error' => 'No Auth to this section. You are probably not subscribed to.' ] , 403);
+        }
         
+        // get the thread with node time < args(time), vector, off_list(), return ok (does NOT return the page !)
+        $target_nodes = self::$dbh->fetch_list("
+            -- Thread::_PUT_one : mark one thread as read
+            SELECT `nid` FROM `node` WHERE tid=:tid AND sid=:sid AND cdate <= FROM_UNIXTIME(:time)
+        ", [':sid' => $args['sid'], ':tid' => $args['tid'], ':time' => $args['time']] );
         
+        $v = NodeVector::db_get(self::$dbh, $context['uid'], $args['sid']);
+        self::$logger->info("Tread::_PUT_one : mark as read : ".print_r($target_nodes, true));
         
-        return $response->withJson( [ 'error' => 'Not implemented yet (called class::method is Thread::_PUT_one().' ] , 404);
+        $v->off_list($target_nodes);
+        $v->db_set();
+
+        return $response->withJson( ['message' => "OK"] , 200);
     } // END public static function _PUT_one
 
+    
     public static function _PUT_page (Request $request, Response $response, $args) { // mark as "read" before $param[time]
         // Route : '/thread/sid/{sid:[0-9]+}/fromtid/{fromtid:[0-9]+}/totid/{totid:[0-9]+}/time/{time:[0-9]+}/'
         $context = $request->getAttribute('context');
+
+        if (!self::auth_can_access_section($args, $context)) {
+            return $response->withJson( [ 'error' => 'No Auth to this section. You are probably not subscribed to.' ] , 403);
+        }
         
+        // get all thread in page with node time < args(time), vector, off_list(), return ok (does NOT return the page !)
+        $target_nodes = self::$dbh->fetch_list("
+            -- Thread::_PUT_page : mark page as read
+            SELECT `nid` FROM `node` WHERE tid >= :fromtid AND tid <= :totid AND sid=:sid AND cdate <= FROM_UNIXTIME(:time)
+        ", [':sid' => $args['sid'], ':totid' => $args['totid'], ':fromtid' => $args['fromtid'], ':time' => $args['time']] );
         
-        return $response->withJson( [ 'error' => 'Not implemented yet (called class::method is Thread::_PUT_page().' ] , 404);
+        $v = NodeVector::db_get(self::$dbh, $context['uid'], $args['sid']);
+        self::$logger->info("Tread::_PUT_page : mark as read : ".print_r($target_nodes, true));
+
+        $v->off_list($target_nodes);
+        $v->db_set();
+
+        return $response->withJson( ['message' => "OK"] , 200);
     } // END public static function _PUT_page
+    
     
     public static function _PUT_all (Request $request, Response $response, $args) { // mark as "read" before $param[time]
         // Route : '/thread/sid/{sid:[0-9]+}/lastnode/{lastnode:[0-9]+}/'
         $context = $request->getAttribute('context');
         
+        if (!self::auth_can_access_section($args, $context)) {
+            return $response->withJson( [ 'error' => 'No Auth to this section. You are probably not subscribed to.' ] , 403);
+        }
         
-          
-        return $response->withJson( [ 'error' => 'Not implemented yet (called class::method is Thread::_PUT_all().' ] , 404);
+        // get nnode, get vector, off_all(), return ok (does NOT return the page !)
+
+        $v = NodeVector::db_get(self::$dbh, $context['uid'], $args['sid']);
+                
+        $v->off_all($args['lastnode']);
+        $v->db_set();
+        
+        return $response->withJson( ['message' => "OK"] , 200);
     } // END public static function _PUT_all
-    
     
 } // END class Thread

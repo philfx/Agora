@@ -37,24 +37,16 @@ interface iVector {
 class NodeVector implements iVector {
     
     // access with NodeVector::vector_size (no $ - it's static)
-    // is NOT included in CONSTANT. 
-    // It's *wrong* to just change this without converting saved vectors first
+
+    // It's *WRONG* to just change the following constants without converting saved vectors first
     public static $mem_size   = 4096; // DEFAUT for all vector. If you change this, convert() the db first...
     public static $mem_buffer = 512;  // used when (moveRight(), move futher to avoid moving at each off()
-//    public static $mem_size   = 10; // DEFAUT for all vector. If you change this, convert() the db first...
-//    public static $mem_buffer = 5;  // used when (moveRight(), move futher to avoid moving at each off()
-
-    // Note using PHP GMP
-    //      Do NOT use >>, << or ~. It works only for numbers < PHP_INT_MAX (i.e. 32 or 64 bits)
-    //          So i choose to manipulate strings...
-    //          It would be better (more elegant) to divide / 2 to move to right
-    //      Attention ! Bit order in GMP is not 012345... but ...543210 (of course)
+   
     
     public static function db_get($dbh, $uid, $sid) {
         $query = "
-            SELECT `cursor`, `bitlist`
-            FROM `user_status`
-            WHERE `uid`=:uid AND `sid`=:sid
+            -- NodeVector::db_get
+            SELECT `cursor`, `bitlist` FROM `user_status` WHERE `uid`=:uid AND `sid`=:sid
         ";
         $values = [ ':uid' => $uid, ':sid' => $sid ];
         $res = $dbh->fetch_one($query, $values);
@@ -66,9 +58,8 @@ class NodeVector implements iVector {
         if ($this->has_changed) {
             $export = $this->export();
             $query = "
-                UPDATE `user_status`
-                SET `cursor`=:cursor, `bitlist`=:bitlist
-                WHERE `uid`=:uid AND `sid`=:sid
+                -- NodeVector::db_set
+                UPDATE `user_status` SET `cursor`=:cursor, `bitlist`=:bitlist WHERE `uid`=:uid AND `sid`=:sid
             ";
             $values = [ ':uid' => $this->uid, ':sid' => $this->sid, 
                         ':cursor' => $export['c'], ':bitlist' => $export['v'] ];
@@ -262,10 +253,9 @@ class NodeVector implements iVector {
     }
     
     public function sql_get_on_list($pos, $table_row) {
-        // parse vector and
-        // if "alone" on (or in pair), put it in a set : "IN (x, y, ...)"
-        // if "group" on, put it in a list : "BETWEEN x AND y OR BETWEEN ..."
-        
+        // parse vector and :
+        //   if 'true' alone or in pair, put it in a set : "IN (x, y, ...)"
+        //   if 'true' in group, put group in a list : "BETWEEN x AND y OR BETWEEN ..."
         
         $from = 0;
         if ($this->c > $this->s) { 
@@ -277,47 +267,94 @@ class NodeVector implements iVector {
         $list_range = [];
         $cursor = null;
         $cursor_last = null;
+        
         for ($i = $from ; $i <= $pos; $i++) {
-            $b = $this->read($i);
-//            echo "$i: $b ... ";
-            if ($b == true && $i !== $pos) {
-                if (is_null($cursor)) {
-                    $cursor = $i;
-                    $cursor_last = $i;
-//                    echo "true, cursor null (c=$cursor, l=$cursor_last)\n";
-                } else {                    
-                    $cursor_last = $i;
-//                    echo "true, (c=$cursor, l=$cursor_last)\n";
+            $b = $this->read($i); // read the node status (true = unread, false = read (then ignore the later)
+            if ($b == false) { 
+                if (!is_null($cursor)) { 
+                    if ( $cursor === $cursor_last) { // previous is alone
+                        array_push($list_alone, $cursor);
+                        $cursor = null;
+                    } elseif ( $cursor === $cursor_last - 1 ) { // 2 previous only
+                        array_push($list_alone, $cursor);
+                        array_push($list_alone, $cursor_last);
+                        $cursor = null;
+                    } else { // more than 2 elements in "true" list
+                        array_push($list_range, "$cursor AND $cursor_last");
+                        $cursor = null;
+                    } // else, ignore and continue
+                } else {
+                    // cursor is null, bit is false, nothing to do
                 }
-            } elseif (!is_null($cursor)) { // $b == false
-                if ( $cursor === $cursor_last ) { // previous is alone
-//                    echo "false, c=last, ALONE (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_alone, $cursor);
-                    $cursor = null;
-                } elseif ( $cursor === $cursor_last - 1 ) { // 2 previous only
-//                    echo "false, c=last-1, ALONE-pair cursor (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_alone, $cursor);
-                    array_push($list_alone, $cursor_last);
-                    $cursor = null;
-                } else { // more than 2 elements in "true" list
-//                    echo "false, range, RANGE (c=$cursor, l=$cursor_last) \n";
-                    array_push($list_range, "$cursor AND $cursor_last");
-                    $cursor = null;
-                } // else, ignore and continue
-            } else { // $b == false and no cursor, just ignore
-//                echo "false, do nothing (c=$cursor, l=$cursor_last)\n"; 
+            }
+            else { // $b == true
+                if ($i == $pos) { // end of list - closing series
+                    if (is_null($cursor)) {
+                        array_push($list_alone, $i);
+                    } else {                    
+                        $cursor_last = $i;
+                        if ( $cursor === $cursor_last - 1 ) { // 2 previous only
+                            array_push($list_alone, $cursor);
+                            array_push($list_alone, $cursor_last);
+                        } else { // more than 2 elements in "true" list
+                            array_push($list_range, "$cursor AND $cursor_last");
+                        }
+                    }
+                } else {
+                    if (is_null($cursor)) {
+                        $cursor = $i;
+                        $cursor_last = $i;
+                    } else {                    
+                        $cursor_last = $i;
+                    }
+                }
             }
         }
+        
+//        OLD - could be removed if read/unread page dispaly is okay...
+//        for ($i = $from ; $i <= $pos; $i++) {
+//            $b = $this->read($i);
+//$sql .= "$i: $b; \n";
+//            if ($b == true && $i !== $pos) {
+//                if (is_null($cursor)) {
+//                    $cursor = $i;
+//                    $cursor_last = $i;
+//$sql .= "true, cursor null (c=$cursor, l=$cursor_last) \n";
+//                } else {                    
+//                    $cursor_last = $i;
+//$sql .=  "true, (c=$cursor, l=$cursor_last)\n";
+//                }
+//            } elseif (!is_null($cursor)) { // $b == false
+//                if ( $cursor === $cursor_last) { // previous is alone
+//$sql .=  "false, c=last, ALONE (c=$cursor, l=$cursor_last) \n";
+//                    array_push($list_alone, $cursor);
+//                    $cursor = null;
+//                } elseif ( $cursor === $cursor_last - 1 ) { // 2 previous only
+//$sql .=  "false, c=last-1, ALONE-pair cursor (c=$cursor, l=$cursor_last) \n";
+//                    array_push($list_alone, $cursor);
+//                    array_push($list_alone, $cursor_last);
+//                    $cursor = null;
+//                } else { // more than 2 elements in "true" list
+//$sql .=  "false, range, RANGE (c=$cursor, l=$cursor_last) \n";
+//                    array_push($list_range, "$cursor AND $cursor_last");
+//                    $cursor = null;
+//                } // else, ignore and continue
+//            } else { // $b == false and no cursor, just ignore
+//$sql .=  "false, do nothing (c=$cursor, l=$cursor_last)\n"; 
+//            }
+//        }
+        // Close the open series
         
         $sql_alone = "";
         if (count($list_alone) > 0) {
             $sql_alone = "$table_row IN (".implode(',',$list_alone).")";
         }
+        
         $sql_range = "";
         if (count($list_range) > 0) {
             $sql_range = " ( $table_row BETWEEN ".implode(" OR $table_row BETWEEN ",$list_range)." )";
         }
-        
+
         $sql = "";
         if ($sql_alone !== "" && $sql_range !== "") {
             $sql = $sql_alone." OR ".$sql_range;
@@ -376,7 +413,7 @@ class NodeVector implements iVector {
             gmp_setbit($this->v, self::$mem_buffer , false );
             $this->has_changed = true;
         }
-        return; // vector changed
+        return;
     }
     
     public function off_list($values = []) {

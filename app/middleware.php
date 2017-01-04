@@ -55,7 +55,7 @@ $app->add(function ($request, $response, $next) {
     
     $context = [];
         
-    if ($request->getMethod() !== 'POST' or $request->getUri()->getPath() !== 'session/') {
+    if ($request->getMethod() !== 'POST' || $request->getUri()->getPath() !== 'session/') {
         // Not a login query, so check auth (authen and author), then get the context
         
         // just log header grep'ed with for /agora/i
@@ -124,24 +124,29 @@ $app->add(function ($request, $response, $next) {
     
     
     // Check if the response should render a 404
+    // TODO something wrong here. Read the Slim doc and test more...
     if ($response->getBody()->getSize() === 0) {
-        $this->logger->error("Empty result for request ".$request->getMethod().' -> '.$request->getUri());
+        $this->logger->error("ERROR, empty result for request ".$request->getMethod().' -> '.$request->getUri());
         $response = $response->withJson(
             ['error'   => 'Result is empty. No error found, however. I admit I don\'t understand why this appends. It shouldn\'t.',
              'request' => $request->getMethod().' -> '.$request->getUri() ], 
             404);
-        // no return here. This request will be log in db anyway. So, continue.
     }
     
     // TODO if response code is not 200, add request information to the response
-    // $statut = $response->getStatusCode();
-    // if ($statut !== 200) {
-    //  $body = $response->getBody();
-    //  $content = $body->getContents()
-    // ... get actual values from json
-    // ... add values for input request, args, params, body
-    // ... return with statut
-    // }
+    // Need help. I can't add a parameter to the bodyJson response ?
+//    if ($response->getStatusCode() !== 200) {
+//        $this->logger->error("TODO error code is not 200, add information to response ".$request->getMethod().' -> '.$request->getUri());
+//        $body = $response->getBody()->getContents();
+//        $this->logger->error("TODO error code is not 200, body ".print_r($body,true)." !");
+//        // ... get actual values from json
+//        // ... add values for input request, args, params, body
+//        // ... return with statut
+////        $data = [];
+////        $data['rest_Method'] = "jjj"; // $request->getMethod();
+////        $data['rest_Uri']    = "kkk"; // $request->getUri();
+////        $response2 = $response->withJson($data);
+//    }
     
     // after init, routing, doing and all stuff, log the request and duration in database
     $context['uid'] = (isset($context['uid'])) ? $context['uid'] : 0;

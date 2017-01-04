@@ -52,7 +52,7 @@ class SessionToken {
     }
     
     public function update_user_login_time($uid) {
-        // TODO update user with last_login
+        // update user with last_login info
         $query = "
             UPDATE `user` SET `last_login`= now() WHERE uid=:uid; 
         ";
